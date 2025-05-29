@@ -1,10 +1,25 @@
-
-import auth from "@react-native-firebase/auth";
-import firestore from '@react-native-firebase/firestore';
+import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+} from "@react-native-firebase/auth";
+import {
+  doc,
+  getDoc,
+  getFirestore,
+  serverTimestamp,
+  setDoc,
+} from "@react-native-firebase/firestore";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Alert, Button, StyleSheet, Text, TextInput, View } from "react-native";
+
+const auth = getAuth();
+const firestore = getFirestore();
 
 GoogleSignin.configure({
   webClientId:
@@ -20,140 +35,108 @@ const AuthComponent = () => {
   const [password, setPassword] = useState("");
   const [initializing, setInitializing] = useState(true);
 
-  // const handleFormSubmit = async () => {
-  //   try {
-  //     console.log(isSignUp ? "🔐 Signing up..." : "🔓 Signing in...", {
-  //       email,
-  //     });
-
-  //     let result;
-
-  //     if (isSignUp) {
-  //       result = await auth().createUserWithEmailAndPassword(email, password);
-  //     } else {
-  //       result = await auth().signInWithEmailAndPassword(email, password);
-  //     }
-
-  //     console.log("✅ Auth success:", result.user?.uid);
-  //     router.replace("/(tabs)/index");
-  //   } catch (err: any) {
-  //     console.error("❌ Auth error:", err);
-  //     Alert.alert(
-  //       "Authentication Failed",
-  //       err.message || "Something went wrong"
-  //     );
-  //   }
-  // };
-
-  const handleFormSubmit = async () => {
-  try {
-    console.log(isSignUp ? "🔐 Signing up..." : "🔓 Signing in...", { email });
-
-    let result;
-
-    if (isSignUp) {
-      result = await auth().createUserWithEmailAndPassword(email, password);
-
-      // After signup, create Firestore user doc
-      await firestore().collection("users").doc(result.user.uid).set({
-        uid: result.user.uid,
-        email: result.user.email,
-        displayName: result.user.displayName || "", // usually null for email/password
-        photoURL: result.user.photoURL || "",
-        coupleId: null,
-        pronouns: "",
-        relationshipLabel: "",
-        joinedAt: firestore.FieldValue.serverTimestamp(),
+  const handleFormSubmit = async (
+    email: string,
+    password: string,
+    isSignUp: boolean
+  ): Promise<void> => {
+    try {
+      console.log(isSignUp ? "🔐 Signing up..." : "🔓 Signing in...", {
+        email,
       });
 
-      console.log("📝 User document created in Firestore.");
-    } else {
-      result = await auth().signInWithEmailAndPassword(email, password);
+      let result:
+        | Awaited<ReturnType<typeof createUserWithEmailAndPassword>>
+        | Awaited<ReturnType<typeof signInWithEmailAndPassword>>;
+
+      if (isSignUp) {
+        result = await createUserWithEmailAndPassword(auth, email, password);
+
+        await setDoc(doc(firestore, "users", result.user.uid), {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName:
+            result.user.displayName || result.user.email?.split("@")[0],
+          photoURL: result.user.photoURL || "",
+          coupleId: null,
+          pronouns: "",
+          relationshipLabel: "",
+          joinedAt: serverTimestamp(),
+        });
+
+        console.log("📝 User document created in Firestore.");
+      } else {
+        result = await signInWithEmailAndPassword(auth, email, password);
+      }
+
+      console.log("✅ Auth success:", result.user?.uid);
+      router.replace("/");
+    } catch (err: unknown) {
+      console.error("❌ Auth error:", err);
+      Alert.alert(
+        "Authentication Failed",
+        err instanceof Error && err.message
+          ? err.message
+          : "Something went wrong"
+      );
     }
-
-    console.log("✅ Auth success:", result.user?.uid);
-    router.replace("/");
-  } catch (err: any) {
-    console.error("❌ Auth error:", err);
-    Alert.alert("Authentication Failed", err.message || "Something went wrong");
-  }
-};
-
-  // async function onGoogleButtonPress() {
-  //   try {
-  //     console.log("🔍 Attempting Google Sign-In...");
-
-  //     await GoogleSignin.signOut(); // Clear previous session
-  //     await GoogleSignin.hasPlayServices({
-  //       showPlayServicesUpdateDialog: true,
-  //     });
-
-  //     const googleUser = await GoogleSignin.signIn();
-  //     console.log("✅ Google user:", googleUser);
-
-  //     const credential = auth.GoogleAuthProvider.credential(googleUser.idToken);
-
-  //     const result = await auth().signInWithCredential(credential);
-  //     console.log("✅ Firebase signed in with Google:", result.user?.uid);
-
-  //     router.replace("/(tabs)/profile");
-  //   } catch (error: any) {
-  //     console.error("❌ Google Sign-In error:", error);
-  //     Alert.alert(
-  //       "Google Sign-In Failed",
-  //       error.message || "Something went wrong"
-  //     );
-  //   }
-  // }
+  };
 
   async function onGoogleButtonPress() {
-  try {
-    console.log("🔍 Attempting Google Sign-In...");
+    try {
+      console.log("🔍 Attempting Google Sign-In...");
 
-    await GoogleSignin.signOut(); // Clear previous session
-    await GoogleSignin.hasPlayServices({
-      showPlayServicesUpdateDialog: true,
-    });
-
-    const googleUser = await GoogleSignin.signIn();
-    console.log("✅ Google user:", googleUser);
-
-    const credential = auth.GoogleAuthProvider.credential(googleUser.idToken);
-    const result = await auth().signInWithCredential(credential);
-
-    const user = result.user;
-
-    // Check if the user already exists in Firestore
-    const userDoc = await firestore().collection("users").doc(user.uid).get();
-
-    if (!userDoc.exists) {
-      await firestore().collection("users").doc(user.uid).set({
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || "",
-        photoURL: user.photoURL || "",
-        coupleId: null,
-        pronouns: "",
-        relationshipLabel: "",
-        joinedAt: firestore.FieldValue.serverTimestamp(),
+      await GoogleSignin.signOut();
+      await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
       });
 
-      console.log("📝 Google user added to Firestore.");
-    } else {
-      console.log("🔎 Google user already exists in Firestore.");
+      const googleUser = await GoogleSignin.signIn();
+      console.log("✅ Google user:", googleUser);
+
+      //@ts-ignore
+      const idToken = googleUser.idToken;
+      if (!idToken) throw new Error("Google Sign-In failed: Missing ID token.");
+      console.log("🔑 Google ID Token:", idToken);
+      const credential = GoogleAuthProvider.credential(idToken);
+      const result = await signInWithCredential(auth, credential);
+
+      const user = result.user;
+
+      const userDocRef = doc(firestore, "users", user.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (!userDoc.exists()) {
+        await setDoc(userDocRef, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || user.email?.split("@")[0],
+          photoURL: user.photoURL || "",
+          coupleId: null,
+          pronouns: "",
+          relationshipLabel: "",
+          joinedAt: serverTimestamp(),
+        });
+        console.log("📝 Google user added to Firestore.");
+      } else {
+        console.log("🔎 Google user already exists in Firestore.");
+      }
+
+      console.log("✅ Firebase signed in with Google:", user.uid);
+      router.replace("/(tabs)/profile");
+    } catch (err) {
+      console.error("❌ Google Sign-In error:", err);
+      Alert.alert(
+        "Google Sign-In Failed",
+        err instanceof Error && err.message
+          ? err.message
+          : "Something went wrong"
+      );
     }
-
-    console.log("✅ Firebase signed in with Google:", user.uid);
-    router.replace("/(tabs)/profile");
-  } catch (error: any) {
-    console.error("❌ Google Sign-In error:", error);
-    Alert.alert("Google Sign-In Failed", error.message || "Something went wrong");
   }
-}
-
 
   useEffect(() => {
-    const unsubscribe = auth().onAuthStateChanged((user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       console.log("👤 Auth state changed:", user?.uid || "No user");
 
       if (user) {
@@ -191,7 +174,7 @@ const AuthComponent = () => {
 
       <Button
         title={isSignUp ? "Sign Up" : "Sign In"}
-        onPress={handleFormSubmit}
+        onPress={() => handleFormSubmit(email, password, isSignUp)}
       />
 
       <Button

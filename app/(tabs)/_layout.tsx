@@ -1,4 +1,3 @@
-// app/(tabs)/_layout.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
@@ -14,7 +13,6 @@ export default function TabsLayout() {
         }),
       }}
     >
-
       <Tabs.Screen
         name="index"
         options={{
@@ -35,7 +33,7 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="message"
+        name="messages"
         options={{
           title: "Messages",
           tabBarIcon: ({ color }) => (

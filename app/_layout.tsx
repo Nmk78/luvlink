@@ -1,24 +1,21 @@
-// app/_layout.tsx
+
+import { GradientProvider, useGradients } from "@/hooks/provider/gradientProvider";
 import { useAuth } from "@/hooks/useAuth";
-import { Stack, useRouter } from "expo-router";
-import { useEffect } from "react";
-import { ActivityIndicator, Platform, StatusBar, View } from "react-native";
+import { Stack } from "expo-router";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  StatusBar,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import "./global.css";
 
 export default function RootLayout() {
   const { user, loading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!loading) {
-      if (user) {
-        router.replace("/");
-      } else {
-        router.replace("/(auth)/login");
-      }
-    }
-  }, [user, loading]);
+  const [error, setError] = useState<Error | null>(null);
 
   if (loading) {
     return (
@@ -28,17 +25,55 @@ export default function RootLayout() {
     );
   }
 
+  // Wrap layout in try/catch to catch rendering errors
+  try {
+    return (
+      <GradientProvider>
+        <AppWithGradient />
+      </GradientProvider>
+    );
+  } catch (e: unknown) {
+    setError(e as Error);
+  }
+
+  if (error) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          padding: 20,
+        }}
+      >
+        <Text style={{ color: "red", fontSize: 18, textAlign: "center" }}>
+          App crashed with error:
+          {"\n"}
+          {error.message}
+        </Text>
+      </View>
+    );
+  }
+
+  return null; // fallback
+}
+
+// ✨ Split into its own component so the hook is used inside the provider
+function AppWithGradient() {
+  const gradient = useGradients();
+
   return (
     <>
       <StatusBar
         barStyle="dark-content"
-        backgroundColor="#ff6b9d"
-        translucent={false} // <-- important
+        backgroundColor={gradient[0]}
+        translucent={false}
       />
+
       <View
         style={{
           flex: 1,
-          backgroundColor: "#ff6b9d", // matches StatusBar
+          backgroundColor: gradient[0],
           paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
         }}
       >
@@ -46,6 +81,8 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="+not-found" />
+            <Stack.Screen name="setting" />
           </Stack>
         </SafeAreaView>
       </View>

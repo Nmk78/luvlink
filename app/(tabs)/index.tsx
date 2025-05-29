@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect } from "react";
 import { View } from "react-native";
 import { useAuth } from "../../hooks/useAuth";
-const Home = () => {
+const Index = () => {
     const { user, loading } = useAuth();
   const router = useRouter();
 
@@ -33,4 +33,4 @@ const Home = () => {
   );
 };
 
-export default Home;
+export default Index;

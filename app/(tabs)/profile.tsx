@@ -1,236 +1,324 @@
-"use client"
+import ActionButton from "@/components/ActionButton";
+import GradientBackground from "@/components/Gradient";
+import { uploadImageToCloudinary } from "@/utils/ImageUploader";
+import { Ionicons } from "@expo/vector-icons";
+import { getApp } from "@react-native-firebase/app";
+import { getAuth, updateProfile } from "@react-native-firebase/auth";
+import {
+  doc,
+  getDoc,
+  getFirestore,
+  serverTimestamp,
+  setDoc
+} from "@react-native-firebase/firestore";
+import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-import GradientBackground from "@/components/Gradient"
-import auth from "@react-native-firebase/auth"
-import firestore from "@react-native-firebase/firestore"
-import { LinearGradient } from "expo-linear-gradient"
-import { useEffect, useState } from "react"
-import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native"
+const app = getApp();
+const authInstance = getAuth(app);
+const firestoreInstance = getFirestore(app);
 
 interface UserProfile {
-  displayName: string
-  email: string
-  photoURL: string
-  bio: string
-  location: string
-  relationshipStatus: string
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL: string;
+  bio: string;
+  location: string;
+  relationshipStatus: "Connected" | "Single" | "";
 }
 
-const ProfileScreen = () => {
-  const [user, setUser] = useState(null)
+const Profile = () => {
+  const [user, setUser] = useState(null);
+  const [image, setImage] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile>({
+    uid: "",
     displayName: "",
     email: "",
     photoURL: "",
     bio: "",
     location: "",
-    relationshipStatus: "Single",
-  })
-  const [isEditing, setIsEditing] = useState(false)
-  const [loading, setLoading] = useState(false)
+    relationshipStatus: "",
+  });
+  const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [uploadingProfile, setUploadingProfile] = useState(false);
 
-  useEffect(() => {
-    const currentUser = auth().currentUser
-    if (currentUser) {
-      setUser(currentUser)
-      setProfile({
-        displayName: currentUser.displayName || "",
-        email: currentUser.email || "",
-        photoURL: currentUser.photoURL || "",
-        bio: "",
-        location: "",
-        relationshipStatus: "Single",
-      })
 
-      // Load additional profile data from Firestore
-      loadUserProfile(currentUser.uid)
+
+useEffect(() => {
+  const currentUser = authInstance.currentUser;
+  if (currentUser) {
+    setUser(currentUser);
+    setProfile({
+      uid: currentUser.uid,
+      displayName: currentUser.displayName || "",
+      email: currentUser.email || "",
+      photoURL: currentUser.photoURL || "",
+      bio: "",
+      location: "",
+      relationshipStatus: "",
+    });
+
+    loadUserProfile(currentUser.uid);
+  }
+}, []);
+
+const loadUserProfile = async (uid: string) => {
+  try {
+    const userDoc = await getDoc(doc(firestoreInstance, "users", uid));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      setProfile((prev) => ({
+        ...prev,
+        ...userData,
+      }));
     }
-  }, [])
+  } catch (error) {
+    console.error("Error loading profile:", error);
+  }
+};
 
-  const loadUserProfile = async (uid: string) => {
+const saveProfile = async () => {
+  if (!user) return;
+
+  setLoading(true);
+  try {
+    await updateProfile(user, {
+      displayName: profile.displayName,
+      photoURL: profile.photoURL,
+    });
+    await setDoc(
+      doc(firestoreInstance, "users", profile.uid),
+      {
+        ...profile,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    setIsEditing(false);
+    Alert.alert("Success", "Profile updated successfully!");
+  } catch (error) {
+    console.error("Error saving profile:", error);
+    Alert.alert("Error", "Failed to update profile");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  const updateProfileField = (field: keyof UserProfile, value: string) => {
+    setProfile((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const pickImage = async () => {
     try {
-      const userDoc = await firestore().collection("users").doc(uid).get()
-      if (userDoc.exists) {
-        const userData = userDoc.data()
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 4],
+        quality: 0.5,
+      });
+
+      if (!result.canceled) {
+        const imageUri = result.assets[0].uri;
+        setUploadingProfile(true);
+
+        // You can use email or uid as the publicId
+        const publicId = `${profile?.uid || "user"}_profile`;
+
+        const uploadedUrl = await uploadImageToCloudinary(imageUri, {
+          publicId,
+          folder: "user_profiles", // optional, organizes files in Cloudinary
+        });
+
+        setImage(imageUri);
+
         setProfile((prev) => ({
           ...prev,
-          ...userData,
-        }))
+          photoURL: uploadedUrl,
+        }));
       }
     } catch (error) {
-      console.error("Error loading profile:", error)
-    }
-  }
-
-  const saveProfile = async () => {
-    if (!user) return
-
-    setLoading(true)
-    try {
-      // Update Firebase Auth profile
-      await user.updateProfile({
-        displayName: profile.displayName,
-        photoURL: profile.photoURL,
-      })
-
-      // Save additional data to Firestore
-      await firestore().collection("users").doc(user.uid).set(
-        {
-          displayName: profile.displayName,
-          email: profile.email,
-          photoURL: profile.photoURL,
-          bio: profile.bio,
-          location: profile.location,
-          relationshipStatus: profile.relationshipStatus,
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      )
-
-      setIsEditing(false)
-      Alert.alert("Success", "Profile updated successfully!")
-    } catch (error) {
-      console.error("Error saving profile:", error)
-      Alert.alert("Error", "Failed to update profile")
+      console.error("Error uploading image:", error);
+      Alert.alert("Error", "Failed to upload image");
     } finally {
-      setLoading(false)
+      setUploadingProfile(false);
     }
-  }
-
-  const handleSignOut = async () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await auth().signOut()
-            console.log("User signed out!")
-          } catch (error) {
-            console.error("Sign out error:", error)
-          }
-        },
-      },
-    ])
-  }
-
-  const updateProfile = (field: keyof UserProfile, value: string) => {
-    setProfile((prev) => ({ ...prev, [field]: value }))
-  }
+  };
 
   return (
     <>
-    <GradientBackground />
-      <ScrollView className="flex-1" contentContainerClassName="pt-16 pb-8">
+      <GradientBackground />
+      <ScrollView className="flex-1" contentContainerClassName="pt-8 pb-8">
         <View className="flex-1 px-6">
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-8">
-            <Text className="text-3xl font-bold text-rose-500 dark:text-rose-400">Profile</Text>
-            <TouchableOpacity
-              onPress={() => setIsEditing(!isEditing)}
-              className="px-4 py-2 rounded-full bg-rose-100 dark:bg-rose-900"
-            >
-              <Text className="text-rose-600 dark:text-rose-300 font-medium">{isEditing ? "Cancel" : "Edit"}</Text>
-            </TouchableOpacity>
+          <View className="w-full flex-row items-center justify-between mb-8">
+            <Text className="text-3xl font-bold text-rose-500 dark:text-rose-400">
+              Profile
+            </Text>
+            <View className="flex-row items-center">
+              <TouchableOpacity
+                onPress={() => setIsEditing(!isEditing)}
+                className="p-2 mr-4"
+              >
+                {isEditing ? (
+                  <Ionicons name="close" size={24} color="#fff" />
+                ) : (
+                  <Ionicons name="create-outline" size={24} color="#fff" />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push("/setting")}
+                className="p-2"
+              >
+                <Ionicons name="settings-outline" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Profile Avatar */}
           <View className="items-center mb-8">
-            <LinearGradient
-              colors={["#ff6b9d", "#ffa07a"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              className="w-32 h-32 rounded-full p-1 mb-4"
-            >
-              <View className="w-full h-full rounded-full bg-white dark:bg-gray-800 items-center justify-center">
-                {profile.photoURL ? (
-                  <Image source={{ uri: profile.photoURL }} className="w-full h-full rounded-full" />
-                ) : (
-                  <Text className="text-4xl">👤</Text>
-                )}
-              </View>
-            </LinearGradient>
+            {/* Avatar */}
+            <View className="w-32 h-32 relative rounded-full bg-white dark:bg-gray-800 items-center justify-center">
+              {profile.photoURL ? (
+                <Image
+                  source={{ uri: profile.photoURL }}
+                  className="w-full h-full rounded-full"
+                />
+              ) : image ? (
+                <Image
+                  source={{ uri: image }}
+                  className="w-full h-full rounded-full"
+                />
+              ) : (
+                <Text className="text-4xl">👤</Text>
+              )}
 
-            {isEditing && (
-              <TouchableOpacity className="px-4 py-2 rounded-full bg-rose-500">
-                <Text className="text-white font-medium">Change Photo</Text>
-              </TouchableOpacity>
-            )}
+              {/* Centered Edit Icon */}
+              {isEditing && (
+                <TouchableOpacity
+                  onPress={pickImage}
+                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/50 rounded-full p-3"
+                >
+                  {uploadingProfile ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Ionicons name="camera" size={20} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           {/* Profile Information */}
           <View className="space-y-4 mb-8">
             {/* Display Name */}
             <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Name</Text>
+              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Name
+              </Text>
               {isEditing ? (
                 <LinearGradient
-                  colors={["rgba(255, 255, 255, 0.9)", "rgba(255, 245, 247, 0.8)"]}
+                  colors={[
+                    "rgba(255, 255, 255, 0.9)",
+                    "rgba(255, 245, 247, 0.8)",
+                  ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  className="rounded-2xl border border-rose-100 dark:border-rose-800"
+                  className="rounded-2xl flex-row items-center justify-between overflow-hidden border border-rose-100 dark:border-rose-800"
                 >
                   <TextInput
-                    className="px-4 py-4 text-gray-800 dark:text-gray-200 text-base"
+                    className="rounded-2xl px-4 py-4 text-gray-800 dark:text-gray-200 text-base"
                     value={profile.displayName}
-                    onChangeText={(text) => updateProfile("displayName", text)}
+                    onChangeText={(text) =>
+                      updateProfileField("displayName", text)
+                    }
                     placeholder="Enter your name"
                     placeholderTextColor="#9CA3AF"
-                  />
+                  />{" "}
+                  {isEditing && (
+                    <Ionicons
+                      name="pencil-outline"
+                      size={16}
+                      color="#9CA3AF"
+                      className="mr-4"
+                    />
+                  )}
                 </LinearGradient>
               ) : (
                 <LinearGradient
-                  colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 245, 247, 0.9)"]}
+                  colors={[
+                    "rgba(255, 255, 255, 0.95)",
+                    "rgba(255, 245, 247, 0.9)",
+                  ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  className="rounded-2xl p-4 border border-rose-100 dark:border-rose-800"
+                  className="rounded-2xl overflow-hidden p-4 border border-rose-100 dark:border-rose-800"
                 >
-                  <Text className="text-gray-800 dark:text-gray-200 text-base">{profile.displayName || "Not set"}</Text>
+                  <Text className="text-gray-800 dark:text-gray-200 text-base">
+                    {profile.displayName || "Not set"}
+                  </Text>
                 </LinearGradient>
               )}
             </View>
 
-            {/* Email */}
-            <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email</Text>
-              <LinearGradient
-                colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 245, 247, 0.9)"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="rounded-2xl p-4 border border-rose-100 dark:border-rose-800"
-              >
-                <Text className="text-gray-600 dark:text-gray-400 text-base">{profile.email}</Text>
-              </LinearGradient>
-            </View>
-
             {/* Bio */}
             <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bio</Text>
+              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Bio
+              </Text>
               {isEditing ? (
                 <LinearGradient
-                  colors={["rgba(255, 255, 255, 0.9)", "rgba(255, 245, 247, 0.8)"]}
+                  colors={[
+                    "rgba(255, 255, 255, 0.9)",
+                    "rgba(255, 245, 247, 0.8)",
+                  ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  className="rounded-2xl border border-rose-100 dark:border-rose-800"
+                  className="rounded-2xl flex-row items-center justify-between overflow-hidden border border-rose-100 dark:border-rose-800"
                 >
                   <TextInput
                     className="px-4 py-4 text-gray-800 dark:text-gray-200 text-base"
                     value={profile.bio}
-                    onChangeText={(text) => updateProfile("bio", text)}
+                    onChangeText={(text) => updateProfileField("bio", text)}
                     placeholder="Tell us about yourself..."
                     placeholderTextColor="#9CA3AF"
                     multiline
                     numberOfLines={3}
                     textAlignVertical="top"
-                  />
+                  />{" "}
+                  {isEditing && (
+                    <Ionicons
+                      name="pencil-outline"
+                      size={16}
+                      color="#9CA3AF"
+                      className="mr-4"
+                    />
+                  )}
                 </LinearGradient>
               ) : (
                 <LinearGradient
-                  colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 245, 247, 0.9)"]}
+                  colors={[
+                    "rgba(255, 255, 255, 0.95)",
+                    "rgba(255, 245, 247, 0.9)",
+                  ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  className="rounded-2xl p-4 border border-rose-100 dark:border-rose-800"
+                  className="rounded-2xl overflow-hidden p-4 border border-rose-100 dark:border-rose-800"
                 >
                   <Text className="text-gray-800 dark:text-gray-200 text-base">
                     {profile.bio || "No bio added yet"}
@@ -239,30 +327,60 @@ const ProfileScreen = () => {
               )}
             </View>
 
+            {/* Email */}
+            <View>
+              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Email
+              </Text>
+              <LinearGradient
+                colors={[
+                  "rgba(255, 255, 255, 0.95)",
+                  "rgba(255, 245, 247, 0.9)",
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                className="rounded-2xl flex-row items-center justify-between overflow-hidden p-4 border border-rose-100 dark:border-rose-800"
+              >
+                <Text className="text-gray-600 dark:text-gray-400 text-base">
+                  {profile.email}
+                </Text>
+              </LinearGradient>
+            </View>
+
             {/* Location */}
             <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Location</Text>
+              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Location
+              </Text>
               {isEditing ? (
                 <LinearGradient
-                  colors={["rgba(255, 255, 255, 0.9)", "rgba(255, 245, 247, 0.8)"]}
+                  colors={[
+                    "rgba(255, 255, 255, 0.9)",
+                    "rgba(255, 245, 247, 0.8)",
+                  ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  className="rounded-2xl border border-rose-100 dark:border-rose-800"
+                  className="rounded-2xl overflow-hidden border border-rose-100 dark:border-rose-800"
                 >
                   <TextInput
                     className="px-4 py-4 text-gray-800 dark:text-gray-200 text-base"
                     value={profile.location}
-                    onChangeText={(text) => updateProfile("location", text)}
+                    onChangeText={(text) =>
+                      updateProfileField("location", text)
+                    }
                     placeholder="Enter your location"
                     placeholderTextColor="#9CA3AF"
                   />
                 </LinearGradient>
               ) : (
                 <LinearGradient
-                  colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 245, 247, 0.9)"]}
+                  colors={[
+                    "rgba(255, 255, 255, 0.95)",
+                    "rgba(255, 245, 247, 0.9)",
+                  ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  className="rounded-2xl p-4 border border-rose-100 dark:border-rose-800"
+                  className="rounded-2xl overflow-hidden p-4 border border-rose-100 dark:border-rose-800"
                 >
                   <Text className="text-gray-800 dark:text-gray-200 text-base">
                     {profile.location || "Location not set"}
@@ -270,66 +388,32 @@ const ProfileScreen = () => {
                 </LinearGradient>
               )}
             </View>
-
-            {/* Relationship Status */}
-            <View>
-              <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Relationship Status</Text>
-              <LinearGradient
-                colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 245, 247, 0.9)"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="rounded-2xl p-4 border border-rose-100 dark:border-rose-800"
-              >
-                <Text className="text-gray-800 dark:text-gray-200 text-base">{profile.relationshipStatus}</Text>
-              </LinearGradient>
-            </View>
           </View>
+          {/* //FIXME Fix this always true condition */}
+          {true && (
+            <View className="space-y-4 my-4 pb-5">
+              <ActionButton
+                onPress={()=> router.push("/connect")}
+                loading={loading}
+                text="Connect with your partner 💞"
+              />
+            </View>
+          )}
 
           {/* Action Buttons */}
-          <View className="space-y-4">
-            {isEditing && (
-              <TouchableOpacity onPress={saveProfile} disabled={loading} className={`${loading ? "opacity-50" : ""}`}>
-                <LinearGradient
-                  colors={["#ff6b9d", "#ffa07a"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  className="rounded-2xl py-4 shadow-lg"
-                >
-                  <Text className="text-white text-center text-lg font-semibold">
-                    {loading ? "Saving..." : "Save Changes"}
-                  </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-
-            {/* Settings Button */}
-            <TouchableOpacity>
-              <LinearGradient
-                colors={["rgba(255, 255, 255, 0.95)", "rgba(255, 245, 247, 0.9)"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="rounded-2xl py-4 border border-gray-200 dark:border-gray-700 shadow-lg"
-              >
-                <Text className="text-gray-700 dark:text-gray-300 text-center text-lg font-medium">⚙️ Settings</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* Sign Out Button */}
-            <TouchableOpacity onPress={handleSignOut}>
-              <LinearGradient
-                colors={["rgba(239, 68, 68, 0.9)", "rgba(220, 38, 38, 0.9)"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="rounded-2xl py-4 shadow-lg"
-              >
-                <Text className="text-white text-center text-lg font-semibold">Sign Out</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
+          {isEditing && (
+            <View className="space-y-4">
+              <ActionButton
+                onPress={saveProfile}
+                loading={loading}
+                text="Save Changes"
+              />
+            </View>
+          )}
         </View>
       </ScrollView>
     </>
-  )
-}
+  );
+};
 
-export default ProfileScreen
+export default Profile;
